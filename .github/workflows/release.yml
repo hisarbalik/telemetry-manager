@@ -453,38 +453,38 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          # Ensure we're on the release branch
+          # Fetch all branches and tags from origin
+          echo "Fetching latest changes from origin..."
+          git fetch origin
+
+          # Checkout and reset to the latest commit on the release branch
+          echo "Checking out ${RELEASE_BRANCH} and syncing with origin..."
           git checkout "${RELEASE_BRANCH}"
-
-          # Fetch latest changes from remote
-          echo "Fetching latest changes from origin/${RELEASE_BRANCH}..."
-          git fetch origin "${RELEASE_BRANCH}"
-
-          # Check if local branch is behind remote
-          LOCAL_COMMIT=$(git rev-parse HEAD)
-          REMOTE_COMMIT=$(git rev-parse "origin/${RELEASE_BRANCH}")
-
-          if [ "$LOCAL_COMMIT" != "$REMOTE_COMMIT" ]; then
-            echo "Local branch is behind remote. Updating..."
-            git reset --hard "origin/${RELEASE_BRANCH}"
-            echo "✓ Branch updated to latest commit: ${REMOTE_COMMIT}"
-          else
-            echo "✓ Branch is already up-to-date with remote"
-          fi
+          git reset --hard "origin/${RELEASE_BRANCH}"
 
           # Verify we're on the correct commit
           CURRENT_COMMIT=$(git rev-parse HEAD)
+          CURRENT_BRANCH=$(git branch --show-current)
+          echo "Current branch: ${CURRENT_BRANCH}"
           echo "Current commit: ${CURRENT_COMMIT}"
 
-          # Create annotated tag
+          # Verify this matches the remote
+          REMOTE_COMMIT=$(git rev-parse "origin/${RELEASE_BRANCH}")
+          if [ "$CURRENT_COMMIT" != "$REMOTE_COMMIT" ]; then
+            echo "::error::Local commit ${CURRENT_COMMIT} does not match remote commit ${REMOTE_COMMIT}"
+            exit 1
+          fi
+          echo "✓ Local branch is in sync with origin/${RELEASE_BRANCH}"
+
+          # Create annotated tag at current HEAD
           git tag -a "${VERSION}" -m "Release ${VERSION}"
-          echo "Created tag ${VERSION} at commit ${CURRENT_COMMIT}"
+          echo "✓ Created tag ${VERSION} at commit ${CURRENT_COMMIT}"
 
           # Push tag to origin
           git push origin "${VERSION}"
           echo "✓ Pushed tag ${VERSION} to origin"
 
-          echo "✓ Successfully created and pushed tag ${VERSION} from ${RELEASE_BRANCH}"
+          echo "✓ Successfully created and pushed tag ${VERSION} from ${RELEASE_BRANCH} at ${CURRENT_COMMIT}"
 
       - name: Skip tag creation (dry run)
         if: ${{ inputs.dry_run == true }}
@@ -537,6 +537,7 @@ jobs:
     secrets: inherit
 
   upload-release-report:
+    if: always() && !cancelled()
     needs:
       - run-pr-integration
       - run-gardener-integration
